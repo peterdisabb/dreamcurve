@@ -38,12 +38,7 @@ aside{background:var(--surface);border-right:1px solid var(--border);display:fle
 .stat{flex:1;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:.5rem .45rem;text-align:center;}
 .stat-label{font-family:'Space Mono',monospace;font-size:.5rem;color:var(--muted);letter-spacing:.08em;text-transform:uppercase;line-height:1.4;}
 .stat-value{font-family:'Space Mono',monospace;font-size:.9rem;font-weight:700;margin-top:.15rem;}
-.stat-value.good{color:#16a34a;}
-.stat-value.ok{color:var(--accent3);}
-.stat-value.bad{color:var(--accent2);}
-.stat-value.neutral{color:var(--accent3);}
-.error-bar-wrap{margin-top:.35rem;height:5px;background:var(--border2);border-radius:3px;overflow:hidden;}
-.error-bar{height:100%;border-radius:3px;transition:width .4s ease,background .4s ease;}
+.stat-value{color:var(--text);}
 
 .predict-row{display:grid;grid-template-columns:1fr 1fr;gap:.4rem;margin-bottom:.55rem;}
 .predict-result{background:var(--bg);border:1px solid var(--border2);border-left:3px solid var(--accent3);padding:.7rem;border-radius:4px;font-family:'Space Mono',monospace;font-size:.76rem;color:var(--text);min-height:2.4rem;display:flex;align-items:center;flex-wrap:wrap;gap:.3rem;word-break:break-all;}
@@ -60,6 +55,16 @@ aside{background:var(--surface);border-right:1px solid var(--border);display:fle
 .empty{font-family:'Space Mono',monospace;font-size:.7rem;color:var(--muted);text-align:center;padding:1.2rem 0;font-style:italic;}
 .clr{background:none;border:1px solid var(--border2);color:var(--muted);font-family:'Space Mono',monospace;font-size:.62rem;padding:.35rem .65rem;border-radius:4px;cursor:pointer;transition:all .15s;margin-top:.65rem;width:100%;}
 .clr:hover{border-color:var(--accent2);color:var(--accent2);}
+/* Bulk import */
+.bulk-textarea{width:100%;background:var(--bg);border:1px solid var(--border2);color:var(--text);font-family:'Space Mono',monospace;font-size:.75rem;padding:.55rem .65rem;border-radius:4px;outline:none;resize:vertical;min-height:72px;transition:border-color .2s;line-height:1.6;}
+.bulk-textarea:focus{border-color:var(--accent);box-shadow:0 0 0 2px rgba(26,111,207,.12);}
+.bulk-textarea::placeholder{color:var(--muted);}
+.bulk-hint{font-family:'Space Mono',monospace;font-size:.58rem;color:var(--muted);margin-top:.35rem;line-height:1.6;}
+.bulk-row{display:flex;gap:.4rem;margin-top:.55rem;}
+.bulk-btn{flex:1;background:var(--accent);color:#fff;border:none;padding:.5rem;border-radius:4px;font-family:'Syne',sans-serif;font-weight:700;font-size:.75rem;cursor:pointer;transition:opacity .15s;}
+.bulk-btn:hover{opacity:.88;}
+.bulk-feedback{font-family:'Space Mono',monospace;font-size:.65rem;margin-top:.4rem;min-height:1rem;}
+.bulk-feedback.ok{color:#16a34a;}.bulk-feedback.err{color:var(--accent2);}
 .canvas-area{position:relative;background:var(--bg);}
 canvas{width:100%;height:100%;display:block;cursor:crosshair;}
 .zoom-controls{position:absolute;bottom:1.1rem;left:1.1rem;display:flex;flex-direction:column;gap:.3rem;}
@@ -93,6 +98,13 @@ canvas{width:100%;height:100%;display:block;cursor:crosshair;}
       </div>
     </div>
     <div class="ss">
+      <h2>Bulk Import</h2>
+      <textarea id="bulkInput" class="bulk-textarea" placeholder="Paste pairs, one per line:&#10;1.2, 3.4&#10;5  7.8&#10;tab-separated also works"></textarea>
+      <p class="bulk-hint">One x,y pair per line. Commas, tabs, or spaces as separators.</p>
+      <div class="bulk-row"><button class="bulk-btn" onclick="importBulk()">Import Points</button></div>
+      <div class="bulk-feedback" id="bulkFeedback"></div>
+    </div>
+    <div class="ss">
       <h2>Fit Type</h2>
       <div class="fit-types">
         <button class="fit-btn active" data-fit="linear" onclick="setFit('linear')">Linear</button>
@@ -110,13 +122,12 @@ canvas{width:100%;height:100%;display:block;cursor:crosshair;}
         <!-- Avg % error -->
         <div class="stat" style="flex:1.6">
           <div class="stat-label">Avg % Error<br><span style="font-size:.48rem;letter-spacing:0;text-transform:none;color:var(--muted)">(lower = better fit)</span></div>
-          <div class="stat-value neutral" id="mapeVal">—</div>
-          <div class="error-bar-wrap"><div class="error-bar" id="errorBar" style="width:0%;background:#16a34a"></div></div>
+          <div class="stat-value" id="mapeVal">—</div>
         </div>
         <!-- Point count -->
         <div class="stat">
           <div class="stat-label">Points</div>
-          <div class="stat-value neutral" id="np">0</div>
+          <div class="stat-value" id="np">0</div>
         </div>
       </div>
     </div>
@@ -301,26 +312,16 @@ function draw(){
 // ── UI ────────────────────────────────────────────────────────
 function updateErrorDisplay(mape){
   const valEl=document.getElementById('mapeVal');
-  const barEl=document.getElementById('errorBar');
-  if(mape===null||mape===undefined){valEl.textContent='—';valEl.className='stat-value neutral';barEl.style.width='0%';return;}
-  // Display
+  if(mape===null||mape===undefined){valEl.textContent='—';return;}
   valEl.textContent=mape<0.1?'< 0.1%':mape.toFixed(1)+'%';
-  // Color coding: <5% good, <20% ok, ≥20% bad
-  if(mape<5){valEl.className='stat-value good';}
-  else if(mape<20){valEl.className='stat-value ok';}
-  else{valEl.className='stat-value bad';}
-  // Bar: maps 0–50% error to 0–100% fill; capped at 50%
-  const pct=Math.min(mape/50*100,100);
-  barEl.style.width=pct+'%';
-  barEl.style.background=mape<5?'#16a34a':mape<20?'#b45309':'#d93535';
 }
 
 function updateUI(){
   const xn=xLbl(),yn=yLbl();
-  document.getElementById('xFieldLbl').textContent=xn.toUpperCase();
-  document.getElementById('yFieldLbl').textContent=yn.toUpperCase();
-  document.getElementById('pxLbl').textContent=`ENTER ${xn.toUpperCase()} →`;
-  document.getElementById('pyLbl').textContent=`ENTER ${yn.toUpperCase()} →`;
+  document.getElementById('xFieldLbl').textContent=xn;
+  document.getElementById('yFieldLbl').textContent=yn;
+  document.getElementById('pxLbl').textContent=`Enter ${xn} →`;
+  document.getElementById('pyLbl').textContent=`Enter ${yn} →`;
   const box=document.getElementById('eqBox');
   if(lastFit){
     let h=`<span class="eq-text">${lastFit.eq}</span>`;
@@ -333,6 +334,29 @@ function updateUI(){
     ?'<div class="empty">No points yet</div>'
     :pts.map((p,i)=>`<div class="pt"><span><span class="pi">${i+1}.</span>(${f(p.x,3)}, ${f(p.y,3)})</span><button class="del" onclick="delPt(${i})">✕</button></div>`).join('');
   predict();
+}
+
+function importBulk(){
+  const raw=document.getElementById('bulkInput').value;
+  const fb=document.getElementById('bulkFeedback');
+  const lines=raw.split(/\n/).map(l=>l.trim()).filter(l=>l.length>0);
+  let added=0,skipped=0;
+  lines.forEach(line=>{
+    // Split on comma, tab, or 2+ spaces, or single space — take first two numbers found
+    const nums=line.split(/[,\t]+|\s{2,}|\s/).map(s=>parseFloat(s.trim())).filter(n=>!isNaN(n));
+    if(nums.length>=2){pts.push({x:nums[0],y:nums[1]});added++;}
+    else skipped++;
+  });
+  if(added>0){
+    fb.textContent=`Added ${added} point${added>1?'s':''}${skipped>0?' ('+skipped+' line'+(skipped>1?'s':'')+' skipped)':''}.`;
+    fb.className='bulk-feedback ok';
+    document.getElementById('bulkInput').value='';
+    autoFit=true;update();
+  } else {
+    fb.textContent=skipped>0?`Could not parse any pairs. Check your format.`:`Nothing to import.`;
+    fb.className='bulk-feedback err';
+  }
+  setTimeout(()=>{fb.textContent='';fb.className='bulk-feedback';},4000);
 }
 
 function update(){lastFit=calcFit();if(autoFit)fitToPoints();updateUI();draw();}
@@ -366,4 +390,3 @@ resize();update();
 </script>
 </body>
 </html>
-
